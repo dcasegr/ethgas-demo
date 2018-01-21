@@ -1,42 +1,54 @@
+import * as _ from 'lodash';
 import React, { Component } from 'react';
 import logo from './logo.svg';
 import './App.css';
 // import Chart from 'react-d3-core';
 // import LineChart from 'react-d3-basic';
 
-const STD_PRICE_TXNS = 5;
-const SAFE_PRICE_TXNS = 10;
+// Number of transactions 
+const STD_PRICE_MIN = 30;
+const STD_PRICE_PCT = .80;
+const SAFE_PRICE_MIN = 60;
+const SAFE_PRICE_PCT = .80;
+// const FAST_PRICE_MIN = 2;
+// const FAST_PRICE_PCT = .80;
+
 class App extends Component {
   constructor(props) {
     super(props);
     this.state = {
-      pending: {},
-      blocks: [],
-      txns: [],
-      txnCountByGwei: [],
+      txnCountByPrice: [],
+      medConfirmTimeByPrice: [],
+      syncing: false,
     };
 
-    this.pending = {};
-    this.blocks = [];
     this.delays = [];
-    this.gwei = [];
     this.blockNumbers = {};
+    
+    this.pendingTxns = {};
+    this.txns = {};
+    this.blocks = [];
   }
 
-  async componentDidMount() {
+  componentDidMount() {
     const eth = this.props.web3.eth;
     eth.getBlock('latest', (err, block) => {
-      if(err) return;
+      if(err) throw err;
       this.blockNumbers[block.hash] = block.number;
       this.updateState();
       eth.filter("pending").watch((err, txnHash) => {
         if(err) return;
-        this.pending[txnHash] = this.currentBlock;
+        this.pendingTxns[txnHash] = {
+          receivedBlock: this.currentBlockHash,
+          receivedBlockNumber: this.blockNumbers[this.currentBlockHash],
+          receivedTime: Date.now(),
+        };
+
         this.updateState();
       });
       eth.filter("latest").watch((err, blockHash) => {
-        this.currentBlock = blockHash;
         if(err) return;
+        this.currentBlockHash = blockHash;
         this.processBlock(blockHash);
       });
     });
@@ -48,15 +60,18 @@ class App extends Component {
     eth.getBlock(blockHash, true, (err, block) => {
       if(err) return;
       this.blockNumbers[block.hash] = block.number;
+      this.currentBlockNumber = block.number;
       block.transactions.forEach((txn) => {
-        if(!this.pending[txn.hash]) return;
-        const delay = block.number - this.blockNumbers[this.pending[txn.hash]];
-        const gwei = txn.gasPrice.dividedBy(1000000000).toNumber();
-        if(!this.delays[delay]){
-          this.delays[delay] = [];
-        }
-        this.delays[delay].push(gwei);
+        const pendingTxn = this.pendingTxns[txn.hash];
+        if(!pendingTxn) return;
+        this.txns[txn.hash] = {
+          blocks: block.number - pendingTxn.receivedBlockNumber,
+          time: Date.now - pendingTxn.receivedTime,
+          price: txn.gasPrice.dividedBy(1000000000).toNumber(),
+          gas: txn.gas,
+        };
         delete this.pending[txn.hash];
+        this.blocks.push(_.pick(block, ['miner', 'gasPrice', 'gasLimit', 'gasUsed']))
       });
       this.updateState();
     });
@@ -64,93 +79,104 @@ class App extends Component {
   }
 
   updateState() {
-    const delays = this.delays.map((prices) => prices.sort());
-    const stdTxns = delays.slice(0, STD_PRICE_TXNS-1).reduce((acc, txns) => {
-      return acc.concat(txns);
-    }, []).sort();
+    const txns = Object.values(this.txns).sort((a, b) => a.blocks - b.blocks);
 
-    let stdPrice = 0;
-    if(stdTxns.length) {
-      stdPrice = stdTxns[Math.floor(stdTxns.length * .95)];
-    }
+    const stdTxns = txns
+      .filter((txn) => txn.time / 60000 < STD_PRICE_MIN);
+    const stdTxn = stdTxns[Math.round(stdTxns.length * STD_PRICE_PCT)];
 
-    const safeTxns = delays.slice(0, SAFE_PRICE_TXNS-1).reduce((acc, txns) => {
-      return acc.concat(txns);
-    }, []).sort();
+    const safeTxns = txns
+      .filter((txn) => txn.time / 60000 < SAFE_PRICE_MIN);
+    const safeTxn = safeTxns[Math.round(safeTxns.length * SAFE_PRICE_PCT)];
 
-    let safePrice = 0;
-    if(safeTxns.length) {
-      safePrice = safeTxns[Math.floor(safeTxns.length * .95)];
-    }
-
-    const allDelays = delays.reduce((acc, txns, delay) => {
-      return acc.concat(txns.map((txn) => delay));
-    }, []).sort();
-
-    const medianWait = allDelays[Math.floor(allDelays.length/2)];
-
-    const txnByGasPrice = this.gwei.reduce((acc, delays, gwei) => {
-      if(!delays) return acc;
-      if(gwei <= 1){
-        acc.count[0] += delays.length;
-      }
-      else if(gwei > 1 && gwei <= 4) {
-        acc.count[1] += delays.length;
-      }
-      else if(gwei > 4 && gwei <= 20) {
-        acc.count[2] += delays.length;
-      }
-      else if(gwei > 20 && gwei <= 50) {
-        acc.count[3] += delays.length;
-      }
-      else if(gwei > 50) {
-        acc.count[4] += delays.length;
+    const medianTxn = txns[Math.round(txns.length / 2)];
+    const txnCountByPrice = [0,0,0,0,0];
+    const confirmTimesByPrice = [];
+    txns.forEach((txn) => {
+      if(txn.price <= 1) {
+        txnCountByPrice[0]++;
+      } else if(txn.price > 1 && txn.price <= 4) {
+        txnCountByPrice[1]++;
+      } else if(txn.price > 4 && txn.price <= 20) {
+        txnCountByPrice[2]++;
+      } else if(txn.price > 20 && txn.price <= 50) {
+        txnCountByPrice[3]++;
+      } else {
+        txnCountByPrice[4]++;
       }
 
-      delays.forEach((delay) => {
-        if(delay > 10) {
-          delay = 10;
-        }
-        else {
-          delay -= 1;
-        }
-        acc.time[delay]++;
-      });
+      let price = Math.round(txn.price)
+      if(price < 1) {
+        price = 0;
+      } else if(price > 40) {
+        price = 40;
+      }
+      
+      if(!confirmTimesByPrice[price]) {
+        confirmTimesByPrice[price] = [];
+      }
+      confirmTimesByPrice[price].push(txn.time);
+    })
+    const medConfirmTimeByPrice = confirmTimesByPrice.map((times, price) => _.mean(times));
+
+    const gasUse = this.blocks.slice(-10).reduce((acc, block) => {
+      acc.limit += block.gasLimit;
+      acc.used += block.gasPrice;
       return acc;
-    }, {
-      count: [0,0,0,0,0],
-      time: [0,0,0,0,0,0,0,0,0,0,0],
-    });
+    }, {limit: 0, used: 0});
 
-    const delayByGwei = this.
 
     this.setState({
-      stdPrice: stdPrice,
-      safePrice: safePrice,
-      txnByGasPrice: txnByGasPrice,
-      medianWait: medianWait,
-      currentBlockNumber: this.blockNumbers[this.currentBlock],
-      pending: this.pending,
-      blocks: this.blocks,
-      txns: delays,
+      currentBlockNumber: this.currentBlockNumber,
+      pendingTxnCount: this.pendingTxns.length,
+      stdPrice: stdTxn && stdTxn.price,
+      safePrice: safeTxn && safeTxn.Price,
+      medianWaitTime: medianTxn && medianTxn.time,
+      medianWaitBlocks: medianTxn && medianTxn.blocks,
+      txnCountByPrice: txnCountByPrice,
+      medConfirmTimeByPrice: medConfirmTimeByPrice,
+      syncing: this.props.web3.eth.syncing,
+      gasUse: Math.round(gasUse.used / gasUse.limit * 100) / 100,
     });
   }
 
   render() {
-
-    let txns = this.state.txns.map((qwai, delay) => {
-      return qwai && (<div key={delay}>
-        Delay:{delay}
-        <ul>
-          <li>Count: {qwai.length}</li>
-          <li>Min: {Math.min(...qwai)}</li>
-          <li>Max: {Math.max(...qwai)}</li>
-          <li>Median: {Math.floor(qwai.length/2)}</li>
-          <li>Mean: {qwai.reduce(((acc, value) => acc + value), 0) / qwai.length}</li>
-        </ul>
-      </div>);
+    const txnCountByGasPriceRows = this.state.txnCountByPrice.map((count, price) => {
+      let label;
+      switch(price) {
+        case 0:
+          label = "<1";
+          break;
+        case 1:
+          label = ">=1 <4";
+          break;
+        case 2:
+          label = ">=4 <20";
+          break;
+        case 3:
+          label = ">=20 <50";
+          break;
+        default:
+          label = ">50";
+          break;
+      }
+      return (<tr key={price}><th>{label}</th><td>{count}</td></tr>);
     });
 
+    const medConfirmTimeByPriceRows = this.state.medConfirmTimeByPrice.map((time, price) =>{
+      let label;
+      switch(price) {
+        case 0:
+          label = "<1";
+          break;
+        case 40:
+          label = ">40";
+          break;
+        default:
+          label = price;
+      }
+      return (<tr key={price}><th>{label}</th><td>{time}</td></tr>);
+    });
 
     return (
       <div className="App">
@@ -158,34 +184,16 @@ class App extends Component {
           <img src={logo} className="App-logo" alt="logo" />
           <h1 className="App-title">Welcome to React</h1>
         </header>
+        Syncing: {JSON.stringify(this.state.syncing)}<br />
         Current Block: {this.state.currentBlockNumber}<br />
-        Pending Count: {Object.keys(this.state.pending).length}<br />
+        Pending Count: {this.state.pendingTxnCount}<br />
         Std Price: {this.state.stdPrice}<br />
         Safe Price: {this.state.safePrice}<br />
-        Median Wait: {this.state.medianWait}<br />
-        Txns By Gas Price:
-        <table><tbody>
-          <tr><th>&lt;= 1:</th><td>{this.state.txnByGasPrice.count.count[0]}</td></tr>
-          <tr><th>&gt; 1 &lt;= 4:</th><td>{this.state.txnByGasPrice.count[1]}</td></tr>
-          <tr><th>&gt; 4 &lt;= 20:</th><td>{this.state.txnByGasPrice.count[2]}</td></tr>
-          <tr><th>&gt; 20 &lt;= 50:</th><td>{this.state.txnByGasPrice.count[3]}</td></tr>
-          <tr><th>&gt; 50</th><td>{this.state.txnByGasPrice.count[4]}</td></tr>
-        </tbody></table>
-        Confirmation Blocks By Gas Price:
-        <table><tbody>
-          <tr><th>&lt;= 1:</th><td>{this.state.txnByGasPrice.count.count[0]}</td></tr>
-          <tr><th>&gt; 1 &lt;= 4:</th><td>{this.state.txnByGasPrice.count[1]}</td></tr>
-          <tr><th>&gt; 4 &lt;= 20:</th><td>{this.state.txnByGasPrice.count[2]}</td></tr>
-          <tr><th>&gt; 20 &lt;= 50:</th><td>{this.state.txnByGasPrice.count[3]}</td></tr>
-          <tr><th>&gt; 50</th><td>{this.state.txnByGasPrice.count[4]}</td></tr>
-          <tr><th>&lt;= 1:</th><td>{this.state.txnByGasPrice.count.count[0]}</td></tr>
-          <tr><th>&gt; 1 &lt;= 4:</th><td>{this.state.txnByGasPrice.count[1]}</td></tr>
-          <tr><th>&gt; 4 &lt;= 20:</th><td>{this.state.txnByGasPrice.count[2]}</td></tr>
-          <tr><th>&gt; 20 &lt;= 50:</th><td>{this.state.txnByGasPrice.count[3]}</td></tr>
-          <tr><th>&gt; 50</th><td>{this.state.txnByGasPrice.count[4]}</td></tr>
-        </tbody></table>
-        Txns: {txns}
-
+        Median Wait Time: {this.state.medianWaitTime}<br />
+        Median Wait Blocks: {this.state.medianWaitBlocks}<br />
+        Transaction Count By Gas Price: <table><tbody>{txnCountByGasPriceRows}</tbody></table>
+        Confirmation Time By Gas Price: <table><tbody>{medConfirmTimeByPriceRows}</tbody></table>
+        Real-time Gas Use: {this.state.gasUse && this.state.gasUse}%
       </div>
     );
   }
