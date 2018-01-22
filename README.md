@@ -14,6 +14,6 @@ Alternatively, you can use the MetaMask browser extension as your Ethereum node 
 
 
 ## Run
-`npm start'
+`npm start`
 
 This should open your web browser automatically. If it does not, visit http://localhost:3000 in your browser.
