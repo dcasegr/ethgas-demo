@@ -24,9 +24,35 @@ table {
 
 td, th{
   border: 1px solid black;
+}
+
+td {
   text-align: right;
+}
+
+th {
+  text-align: center !important;
 }
 
 label {
   width: 50%;
+}
+
+div {
+  width: 100%;
+}
+
+#mask {
+  padding-top: 10%;
+  color: white;
+  background-color: black;
+  opacity: 50%;
+  position: absolute;
+  text-align: center;
+  vertical-align: middle;
+  height: 100%;
+  top: 0;
+  left: 0;
+  right: 0;
+  background: rgba(0, 0, 0, 0.9);
 }

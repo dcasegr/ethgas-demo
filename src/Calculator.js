@@ -8,6 +8,9 @@ class Calc extends Component {
         gasPrice: 4,
         gasUsed: 21000,
       };
+      this.txns = props.txns;
+      this.pendingTxns = props.pendingTxns;
+      this.blockCount = props.blockCount;
     }
 
     handlePriceChange(event) {
@@ -23,21 +26,21 @@ class Calc extends Component {
     }
 
     recalculate() {
-        const acceptedBlocks = this.props.txns.reduce((blocks, txn) => {
+        const acceptedBlocks = this.txns.reduce((blocks, txn) => {
             if(this.state.gasPrice >= txn.gasPrice){
                 blocks.add(txn.blockHash);
             }
             return blocks;
         }, new Set())
-        const percentAccepted = this.props.blockCount ? Math.round(acceptedBlocks / this.props.blockCount * 100) + '%' : "";
-        const txnCount = this.props.pendingTxns.reduce((count, txn) => {
+        const percentAccepted = this.blockCount ? Math.round(acceptedBlocks / this.blockCount * 100) + '%' : "";
+        const txnCount = this.pendingTxns.reduce((count, txn) => {
             if(this.state.gasPrice <= txn.gasPrice) {
                 count++;
             }
             return count;
         }, 0);
 
-        const txns = txns.filter((txn) => txn.gasPrice == this.state.gasPrice);
+        const txns = this.txns.filter((txn) => txn.gasPrice === this.state.gasPrice);
         const totalTime = txns.reduce(((total, txn) => total += txn.time), 0);
         const totalBlocks = txns.reduce(((total, txn) => total += txn.blocks), 0);
 
@@ -51,38 +54,44 @@ class Calc extends Component {
     }
 
     render() {
-        return (<form>
-            <h3>Calc</h3>
-            <div class="form-group">
-                <label>Gas Price (Gwei)</label>
-                <input type="number" value={this.state.gasPrice} onChange={this.handlePriceChange}/>
+        return (<div><h3>Calc</h3>
+        <form className="row">
+            <div className="col">
+                <div className="form-group">
+                    <label>Gas Price (Gwei)</label>
+                    <input type="number" value={this.state.gasPrice} onChange={this.handlePriceChange}/>
+                </div>
+                <div className="form-group">
+                    <label>Gas Used</label>
+                    <input type="number" value={this.state.gasUsed} onChange={this.handleGasChange}/>
+                </div>
+                <input type="button" value="Calculate" onClick={this.recalculate}/>
             </div>
-            <div class="form-group">
-                <label>Gas Used</label>
-                <input type="number" value={this.state.gasUsed} onChange={this.handleGasChange}/>
+            <div className="col">
+                <div className="form-group">
+                    <label>Mean Time to Confirm (Blocks)</label>
+                    {this.state.blocks}
+                </div>
+                <div className="form-group">
+                    <label>Mean Time to Confirm (Seconds)</label>
+                    {this.state.time}
+                </div>
             </div>
-            <input type="button" value="Calculate" onclick={this.recalculate}/>
-            <div class="form-group">
-                <label>% of blocks accpeting this gas price</label>
-                {this.state.percentAccepted}
+            <div className="col">
+            <div className="form-group">
+                    <label>% of blocks accpeting this gas price</label>
+                    {this.state.percentAccepted}
+                </div>
+                <div className="form-group">
+                    <label>Transactions At or Above in Current Txpool</label>
+                    {this.state.txnCount}
+                </div>
+                <div className="form-group">
+                    <label>Transaction fee (ETH)</label>
+                    {this.state.fee}
+                </div>
             </div>
-            <div class="form-group">
-                <label>Transactions At or Above in Current Txpool</label>
-                {this.state.txnCount}
-            </div>
-            <div class="form-group">
-                <label>Mean Time to Confirm (Blocks)</label>
-                {this.state.blocks}
-            </div>
-            <div class="form-group">
-                <label>Mean Time to Confirm (Seconds)</label>
-                {this.state.time}
-            </div>
-            <div class="form-group">
-                <label>Transaction fee (ETH)</label>
-                {this.state.fee}
-            </div>
-        </form>);
+        </form></div>);
     }
 }
 

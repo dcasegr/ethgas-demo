@@ -21,6 +21,7 @@ class App extends Component {
       txnCountByPrice: [],
       medConfirmTimeByPrice: [],
       syncing: false,
+      loading: true,
     };
 
     this.delays = [];
@@ -147,13 +148,14 @@ class App extends Component {
       stdPrice: stdTxn && stdTxn.price,
       safePrice: safeTxn && safeTxn.price,
       medianWaitTime: Math.round(medianTxn && medianTxn.time / 1000),
-      medianWaitBlocks: medianTxn && medianTxn.blocks,
+      medianWaitBlocks: (medianTxn && medianTxn.blocks) || "",
       txnCountByPrice: txnCountByPrice,
       medConfirmTimeByPrice: medConfirmTimeByPrice,
       gasUse: gasUse,
       cheapestGas: cheapestGas,
       highestGas: highestGas,
       medianGas: medianGas,
+      loading: !this.blocks.length,
     });
   }
 
@@ -173,6 +175,11 @@ class App extends Component {
       return (<tr key={price}><th>{label}</th><td>{time}</td></tr>);
     });
 
+    let mask = "";
+    if(this.state.loading) {
+      mask = (<div id="mask">Initializing...</div>);
+    }
+
     return (
       <div className="App container-fluid">
         <header className="App-header">
@@ -189,15 +196,6 @@ class App extends Component {
               <tr><td>Standard (&lt;5m)</td><td>{this.state.stdPrice}</td></tr>
               <tr><td>Fast (&lt;2m)</td><td>{this.state.fastPrice}</td></tr>
             </tbody></table>
-            <h4>Stats</h4>
-            <label>Pending Transaction Count:</label> {this.state.pendingTxnCount}<br />
-            <label>Median Wait Seconds:</label> {this.state.medianWaitTime}<br />
-            <label>Median Wait Blocks:</label> {this.state.medianWaitBlocks}<br />
-            <label>Real-time Gas Use:</label> {this.state.gasUse}<br/>
-            <label>Cheapest Gas Price:</label> {this.state.cheapestGas}<br/>
-            <label>Highest Gas Price:</label> {this.state.highestGas}<br/>
-            <label>Median Gas Price:</label> {this.state.medianGas}<br/>
-            <label>Total Transactions:</label> {this.state.txnCount}<br/><br />
           </div>
           <div className="col">
             <h4>Transaction Count By Gas Price</h4>
@@ -217,13 +215,24 @@ class App extends Component {
                 <td>{this.state.txnCountByPrice[4]}</td>
               </tr>
             </tbody></table>
-            <h4>Median Confirmation Minutes By Gas Price</h4>
+            <h4>Confirmation Minutes By Gas Price</h4>
             <table><tbody>{medConfirmTimeByPriceRows}</tbody></table>
           </div>
           <div className="col">
-            <Calc txns={this.txns} pendingTxns={this.pendingTxns} blockCount={this.state.blocksProcessed}/>
+            <h4>Stats</h4>
+            <label>Pending Transaction Count:</label> {this.state.pendingTxnCount}<br />
+            <label>Median Wait Seconds:</label> {this.state.medianWaitTime}<br />
+            <label>Median Wait Blocks:</label> {this.state.medianWaitBlocks}<br />
+            <label>Real-time Gas Use:</label> {this.state.gasUse}<br/>
+            <label>Cheapest Gas Price:</label> {this.state.cheapestGas}<br/>
+            <label>Highest Gas Price:</label> {this.state.highestGas}<br/>
+            <label>Median Gas Price:</label> {this.state.medianGas}<br/>
+            <label>Total Transactions:</label> {this.state.txnCount}<br/><br />
           </div>
         </div>
+        <hr />
+        <Calc txns={this.txns} pendingTxns={this.pendingTxns} blockCount={this.state.blocksProcessed}/>
+        {mask}
       </div>
     );
   }
