@@ -1,16 +1,17 @@
-#Eth Gas Demo
+# Eth Gas Demo
 
-##Install
+Ethereum network statistics based on https://ethgasstation.info.
+
+All statistics are calculated in the browser from the time the page was openned. It will take a few minutes before there is enough data to product significant results.
+
+## Install
 `npm install`
 
-##Setup
-Edit src/config.js
-`const config = {
-    rpc: <RPC Host address>,
-    enableMetaMask: false, // NOTE: MetaMask does not allow pending transaction access
-};
+## Setup
+Edit src/config.js and populate `rpc` value with Ethereum node address. Node must have RPC running and allow requests from http://localhost:3000.
 
-export default config;`
 
-##Run
+## Run
 `npm start'
+
+This should open your web browser automatically. If it does not, visit http://localhost:3000 in your browser.
