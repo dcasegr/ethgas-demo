@@ -4,9 +4,10 @@
   "private": true,
   "dependencies": {
     "bignumber": "^1.1.0",
+    "bootstrap": "^4.0.0",
     "lodash": "^4.17.4",
     "react": "^16.2.0",
-    "react-d3-basic": "^1.6.11",
+    "react-d3": "^0.4.0",
     "react-dom": "^16.2.0",
     "react-scripts": "1.1.0",
     "web3": "^0.20.4"

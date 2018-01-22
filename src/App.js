@@ -1,11 +1,12 @@
 import * as _ from 'lodash';
 import React, { Component } from 'react';
-import logo from './logo.svg';
 import './App.css';
+import 'bootstrap/dist/css/bootstrap.min.css';
+import Calc from './Calculator';
 // import Chart from 'react-d3-core';
 // import LineChart from 'react-d3-basic';
 
-// Number of transactions 
+// Number of transactions
 const STD_PRICE_MIN = 30;
 const STD_PRICE_PCT = .80;
 const SAFE_PRICE_MIN = 60;
@@ -24,7 +25,7 @@ class App extends Component {
 
     this.delays = [];
     this.blockNumbers = {};
-    
+
     this.pendingTxns = {};
     this.txns = {};
     this.blocks = [];
@@ -44,6 +45,9 @@ class App extends Component {
           receivedTime: Date.now(),
         };
 
+        eth.getTransaction(txnHash, (err, txn) => {
+          this.pendingTxns[txn.hash].gasPrice = txn.gasPrice;
+        })
         this.updateState();
       });
       eth.filter("latest").watch((err, blockHash) => {
@@ -66,12 +70,12 @@ class App extends Component {
         if(!pendingTxn) return;
         this.txns[txn.hash] = {
           blocks: block.number - pendingTxn.receivedBlockNumber,
-          time: Date.now - pendingTxn.receivedTime,
+          time: Date.now() - pendingTxn.receivedTime,
           price: txn.gasPrice.dividedBy(1000000000).toNumber(),
           gas: txn.gas,
         };
-        delete this.pending[txn.hash];
-        this.blocks.push(_.pick(block, ['miner', 'gasPrice', 'gasLimit', 'gasUsed']))
+        delete this.pendingTxns[txn.hash];
+        this.blocks.push(_.pick(block, ['miner', 'gasLimit', 'gasUsed']))
       });
       this.updateState();
     });
@@ -80,18 +84,16 @@ class App extends Component {
 
   updateState() {
     const txns = Object.values(this.txns).sort((a, b) => a.blocks - b.blocks);
-
-    const stdTxns = txns
-      .filter((txn) => txn.time / 60000 < STD_PRICE_MIN);
+    const stdTxns = txns.filter((txn) => txn.time / 60000 < STD_PRICE_MIN);
     const stdTxn = stdTxns[Math.round(stdTxns.length * STD_PRICE_PCT)];
-
-    const safeTxns = txns
-      .filter((txn) => txn.time / 60000 < SAFE_PRICE_MIN);
+    const safeTxns = txns.filter((txn) => txn.time / 60000 < SAFE_PRICE_MIN);
     const safeTxn = safeTxns[Math.round(safeTxns.length * SAFE_PRICE_PCT)];
 
     const medianTxn = txns[Math.round(txns.length / 2)];
     const txnCountByPrice = [0,0,0,0,0];
     const confirmTimesByPrice = [];
+    let cheapestGas = Number.MAX_SAFE_INTEGER;
+    let highestGas = 0;
     txns.forEach((txn) => {
       if(txn.price <= 1) {
         txnCountByPrice[0]++;
@@ -111,58 +113,51 @@ class App extends Component {
       } else if(price > 40) {
         price = 40;
       }
-      
+
       if(!confirmTimesByPrice[price]) {
         confirmTimesByPrice[price] = [];
       }
       confirmTimesByPrice[price].push(txn.time);
+
+      if(txn.price < cheapestGas) {
+        cheapestGas = txn.price;
+      }
+      if(txn.price > highestGas) {
+        highestGas = txn.price;
+      }
     })
-    const medConfirmTimeByPrice = confirmTimesByPrice.map((times, price) => _.mean(times));
+    const medConfirmTimeByPrice = confirmTimesByPrice.map((times, price) => Math.round(_.mean(times) / 6000) / 10);
 
-    const gasUse = this.blocks.slice(-10).reduce((acc, block) => {
-      acc.limit += block.gasLimit;
-      acc.used += block.gasPrice;
-      return acc;
-    }, {limit: 0, used: 0});
+    let gasLimit = 0, gasUsed = 0;
+    this.blocks.slice(-10).forEach((block) => {
+      gasLimit += block.gasLimit;
+      gasUsed += block.gasUsed;
+    });
+    const gasUse = gasLimit ? Math.round(gasUsed / gasLimit * 100) + '%' : "";
 
-
+    const txnByGasPrice = Object.values(this.txns).sort((a, b) => a.price - b.price);
+    const medianGas = txnByGasPrice[Math.round(txnByGasPrice / 2)];
     this.setState({
       currentBlockNumber: this.currentBlockNumber,
-      pendingTxnCount: this.pendingTxns.length,
+      txns: this.txns,
+      pendingTxns: this.pendingTxns,
+      blocksProcessed: this.blocks.length,
+      pendingTxnCount: Object.keys(this.pendingTxns).length,
+      txnCount: Object.keys(this.txns).length,
       stdPrice: stdTxn && stdTxn.price,
-      safePrice: safeTxn && safeTxn.Price,
-      medianWaitTime: medianTxn && medianTxn.time,
+      safePrice: safeTxn && safeTxn.price,
+      medianWaitTime: Math.round(medianTxn && medianTxn.time / 1000),
       medianWaitBlocks: medianTxn && medianTxn.blocks,
       txnCountByPrice: txnCountByPrice,
       medConfirmTimeByPrice: medConfirmTimeByPrice,
-      syncing: this.props.web3.eth.syncing,
-      gasUse: Math.round(gasUse.used / gasUse.limit * 100) / 100,
+      gasUse: gasUse,
+      cheapestGas: cheapestGas,
+      highestGas: highestGas,
+      medianGas: medianGas,
     });
   }
 
   render() {
-    const txnCountByGasPriceRows = this.state.txnCountByPrice.map((count, price) => {
-      let label;
-      switch(price) {
-        case 0:
-          label = "<1";
-          break;
-        case 1:
-          label = ">=1 <4";
-          break;
-        case 2:
-          label = ">=4 <20";
-          break;
-        case 3:
-          label = ">=20 <50";
-          break;
-        default:
-          label = ">50";
-          break;
-      }
-      return (<tr key={price}><th>{label}</th><td>{count}</td></tr>);
-    });
-
     const medConfirmTimeByPriceRows = this.state.medConfirmTimeByPrice.map((time, price) =>{
       let label;
       switch(price) {
@@ -179,21 +174,56 @@ class App extends Component {
     });
 
     return (
-      <div className="App">
+      <div className="App container-fluid">
         <header className="App-header">
-          <img src={logo} className="App-logo" alt="logo" />
-          <h1 className="App-title">Welcome to React</h1>
+          <h1 className="App-title">Eth Gas</h1>
+          Current Block: {this.state.currentBlockNumber}<br />
+          Blocks Processed: {this.state.blocksProcessed}<br />
         </header>
-        Syncing: {JSON.stringify(this.state.syncing)}<br />
-        Current Block: {this.state.currentBlockNumber}<br />
-        Pending Count: {this.state.pendingTxnCount}<br />
-        Std Price: {this.state.stdPrice}<br />
-        Safe Price: {this.state.safePrice}<br />
-        Median Wait Time: {this.state.medianWaitTime}<br />
-        Median Wait Blocks: {this.state.medianWaitBlocks}<br />
-        Transaction Count By Gas Price: <table><tbody>{txnCountByGasPriceRows}</tbody></table>
-        Confirmation Time By Gas Price: <table><tbody>{medConfirmTimeByPriceRows}</tbody></table>
-        Real-time Gas Use: {this.state.gasUse && this.state.gasUse}%
+        <div className="row">
+          <div className="col">
+            <h4>Recommended Gas Price</h4>
+            <table><tbody>
+              <tr><th>Speed</th><th>Gas Price</th></tr>
+              <tr><td>Safe (&lt;30m)</td><td>{this.state.safePrice}</td></tr>
+              <tr><td>Standard (&lt;5m)</td><td>{this.state.stdPrice}</td></tr>
+              <tr><td>Fast (&lt;2m)</td><td>{this.state.fastPrice}</td></tr>
+            </tbody></table>
+            <h4>Stats</h4>
+            <label>Pending Transaction Count:</label> {this.state.pendingTxnCount}<br />
+            <label>Median Wait Seconds:</label> {this.state.medianWaitTime}<br />
+            <label>Median Wait Blocks:</label> {this.state.medianWaitBlocks}<br />
+            <label>Real-time Gas Use:</label> {this.state.gasUse}<br/>
+            <label>Cheapest Gas Price:</label> {this.state.cheapestGas}<br/>
+            <label>Highest Gas Price:</label> {this.state.highestGas}<br/>
+            <label>Median Gas Price:</label> {this.state.medianGas}<br/>
+            <label>Total Transactions:</label> {this.state.txnCount}<br/><br />
+          </div>
+          <div className="col">
+            <h4>Transaction Count By Gas Price</h4>
+            <table><tbody>
+              <tr>
+                <th>&lt;1</th>
+                <th>&gt;1 &lt;=4</th>
+                <th>&gt;4 &lt;=20</th>
+                <th>&gt;20 &lt;=50</th>
+                <th>&gt;50</th>
+              </tr>
+              <tr>
+                <td>{this.state.txnCountByPrice[0]}</td>
+                <td>{this.state.txnCountByPrice[1]}</td>
+                <td>{this.state.txnCountByPrice[2]}</td>
+                <td>{this.state.txnCountByPrice[3]}</td>
+                <td>{this.state.txnCountByPrice[4]}</td>
+              </tr>
+            </tbody></table>
+            <h4>Median Confirmation Minutes By Gas Price</h4>
+            <table><tbody>{medConfirmTimeByPriceRows}</tbody></table>
+          </div>
+          <div className="col">
+            <Calc txns={this.txns} pendingTxns={this.pendingTxns} blockCount={this.state.blocksProcessed}/>
+          </div>
+        </div>
       </div>
     );
   }
