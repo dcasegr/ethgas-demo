@@ -131,7 +131,7 @@ class App extends Component {
     const medConfirmTimeByPrice = confirmTimesByPrice.map((times, price) => Math.round(_.mean(times) / 6000) / 10);
 
     let gasLimit = 0, gasUsed = 0;
-    this.blocks.slice(-10).forEach((block) => {
+    this.blocks.slice(-100).forEach((block) => {
       gasLimit += block.gasLimit;
       gasUsed += block.gasUsed;
     });
