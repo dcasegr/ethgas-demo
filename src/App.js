@@ -47,7 +47,8 @@ class App extends Component {
         };
 
         eth.getTransaction(txnHash, (err, txn) => {
-          this.pendingTxns[txn.hash].gasPrice = txn.gasPrice;
+          if(err || !txn || !this.pendingTxns[txn.hash]) return;
+          this.pendingTxns[txn.hash].gasPrice = txn.gasPrice.dividedBy(1000000000).toNumber();
         })
         this.updateState();
       });
@@ -137,7 +138,7 @@ class App extends Component {
     const gasUse = gasLimit ? Math.round(gasUsed / gasLimit * 100) + '%' : "";
 
     const txnByGasPrice = Object.values(this.txns).sort((a, b) => a.price - b.price);
-    const medianGas = txnByGasPrice[Math.round(txnByGasPrice / 2)];
+    const medianGas = _.get(txnByGasPrice[Math.round(txnByGasPrice.length / 2)], 'price');
     this.setState({
       currentBlockNumber: this.currentBlockNumber,
       txns: this.txns,
@@ -160,7 +161,7 @@ class App extends Component {
   }
 
   render() {
-    const medConfirmTimeByPriceRows = this.state.medConfirmTimeByPrice.map((time, price) =>{
+    const medConfirmTimeByPriceHeaders = this.state.medConfirmTimeByPrice.map((time, price) =>{
       let label;
       switch(price) {
         case 0:
@@ -172,9 +173,15 @@ class App extends Component {
         default:
           label = price;
       }
-      return (<tr key={price}><th>{label}</th><td>{time}</td></tr>);
+      return (<th key={price}>{label}</th>);
     });
-
+    const medConfirmTimeByPriceValues = this.state.medConfirmTimeByPrice.map((time, price) => (<td key={price}>{time}</td>));
+    const medConfirmTimeByPrice = (<table>
+      <tbody>
+        <tr>{medConfirmTimeByPriceHeaders}</tr>
+        <tr>{medConfirmTimeByPriceValues}</tr>
+      </tbody>
+    </table>);
     let mask = "";
     if(this.state.loading) {
       mask = (<div id="mask">Initializing...</div>);
@@ -186,6 +193,7 @@ class App extends Component {
           <h1 className="App-title">Eth Gas</h1>
           Current Block: {this.state.currentBlockNumber}<br />
           Blocks Processed: {this.state.blocksProcessed}<br />
+          Transactions Processed: {this.state.txnCount}<br/>
         </header>
         <div className="row">
           <div className="col">
@@ -196,8 +204,6 @@ class App extends Component {
               <tr><td>Standard (&lt;5m)</td><td>{this.state.stdPrice}</td></tr>
               <tr><td>Fast (&lt;2m)</td><td>{this.state.fastPrice}</td></tr>
             </tbody></table>
-          </div>
-          <div className="col">
             <h4>Transaction Count By Gas Price</h4>
             <table><tbody>
               <tr>
@@ -215,8 +221,6 @@ class App extends Component {
                 <td>{this.state.txnCountByPrice[4]}</td>
               </tr>
             </tbody></table>
-            <h4>Confirmation Minutes By Gas Price</h4>
-            <table><tbody>{medConfirmTimeByPriceRows}</tbody></table>
           </div>
           <div className="col">
             <h4>Stats</h4>
@@ -227,7 +231,12 @@ class App extends Component {
             <label>Cheapest Gas Price:</label> {this.state.cheapestGas}<br/>
             <label>Highest Gas Price:</label> {this.state.highestGas}<br/>
             <label>Median Gas Price:</label> {this.state.medianGas}<br/>
-            <label>Total Transactions:</label> {this.state.txnCount}<br/><br />
+          </div>
+        </div>
+        <div className="row">
+        <div className="col">
+            <h4>Confirmation Time By Gas Price (minutes)</h4>
+            {medConfirmTimeByPrice}
           </div>
         </div>
         <hr />

@@ -1,5 +1,5 @@
+import _ from 'lodash';
 import React, { Component } from 'react';
-import BigNumber from 'bignumber'
 
 class Calc extends Component {
     constructor(props) {
@@ -10,7 +10,7 @@ class Calc extends Component {
       };
       this.txns = props.txns;
       this.pendingTxns = props.pendingTxns;
-      this.blockCount = props.blockCount;
+      this._recalculate = () => this.recalculate();
     }
 
     handlePriceChange(event) {
@@ -26,30 +26,31 @@ class Calc extends Component {
     }
 
     recalculate() {
-        const acceptedBlocks = this.txns.reduce((blocks, txn) => {
+        const acceptedBlocks = _.reduce(this.txns, (blocks, txn) => {
             if(this.state.gasPrice >= txn.gasPrice){
                 blocks.add(txn.blockHash);
             }
             return blocks;
         }, new Set())
-        const percentAccepted = this.blockCount ? Math.round(acceptedBlocks / this.blockCount * 100) + '%' : "";
-        const txnCount = this.pendingTxns.reduce((count, txn) => {
+        const percentAccepted = this.props.blockCount ? Math.round(acceptedBlocks.size / this.props.blockCount * 100) + '%' : "";
+        const txnCount = _.reduce(this.pendingTxns, (count, txn) => {
             if(this.state.gasPrice <= txn.gasPrice) {
                 count++;
             }
             return count;
         }, 0);
 
-        const txns = this.txns.filter((txn) => txn.gasPrice === this.state.gasPrice);
+        const txns = Object.values(this.txns).filter((txn) => txn.gasPrice === this.state.gasPrice);
         const totalTime = txns.reduce(((total, txn) => total += txn.time), 0);
         const totalBlocks = txns.reduce(((total, txn) => total += txn.blocks), 0);
-
+        const fee = this.state.gasUsed * this.state.gasPrice / 1000000000;
         this.setState({
             percentAccepted: percentAccepted,
             txnCount: txnCount,
             time: txns.length && (Math.round(totalTime / txns.length / 1000)),
             blocks: txns.length && (Math.round(totalBlocks / txns.length / 1000)),
-            fee: new BigNumber(this.state.gasUsed).times(this.state.gasPrice).dividedBy(1000000000).toNumber(),
+            // fee: new BigNumber(this.state.gasUsed).times(this.state.gasPrice).dividedBy(1000000000).toNumber(),
+            fee: fee,
         });
     }
 
@@ -65,7 +66,7 @@ class Calc extends Component {
                     <label>Gas Used</label>
                     <input type="number" value={this.state.gasUsed} onChange={this.handleGasChange}/>
                 </div>
-                <input type="button" value="Calculate" onClick={this.recalculate}/>
+                <input type="button" value="Calculate" onClick={this._recalculate}/>
             </div>
             <div className="col">
                 <div className="form-group">
